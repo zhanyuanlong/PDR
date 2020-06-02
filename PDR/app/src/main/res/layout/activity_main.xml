@@ -73,63 +73,6 @@
                 />
         </LinearLayout>
 
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_weight="1"
-            android:background="#292421"
-            >
-
-            <TextView
-                android:id="@+id/accz"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColor="#FFFFFF"
-                android:textSize="20dp"
-                android:text="accz: "
-                android:padding="10dp"
-                />
-
-            <TextView
-                android:id="@+id/angle_0"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColor="#FFFFFF"
-                android:textSize="20dp"
-                android:text="angle_0："
-                android:padding="10dp"
-                />
-
-
-            <TextView
-                android:id="@+id/angle_1"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColor="#FFFFFF"
-                android:textSize="20dp"
-                android:text="angle_1："
-                android:padding="10dp"
-                />
-
-
-            <TextView
-                android:id="@+id/angle_2"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:textColor="#FFFFFF"
-                android:textSize="20dp"
-                android:text="angle_2："
-                android:padding="10dp"
-                />
-
-        </LinearLayout>
-
     </LinearLayout>
 
 

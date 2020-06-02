@@ -18,13 +18,17 @@ import android.widget.Toast;
 import android.Manifest;
 
 
+import com.zyl.pdr.utils.FileUtils;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.Writer;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedList;
 
 
 public class MainActivity extends Activity implements SensorEventListener{
@@ -35,25 +39,38 @@ public class MainActivity extends Activity implements SensorEventListener{
     // 文件相关
     public static final String PATH_PDR = "/sdcard/pdr/";   // 数据存储位置
     private File dataLog; // 指向当前的输出文件
+    private RandomAccessFile raf; // 指向当前的输出文件的访问句柄
     private boolean writeSwitch = false;
+
+
 
     // 数据用
     private float[] originalAcc = new float[3]; // 储存原始传感器acc
     private MovingAverage[] mAverageLinearAcceleration = new MovingAverage[3]; // 平均单元
     private float[] originalGyro = new float[3];    // 储存陀螺仪原始数据
     private double gyroTime;
+    private double OriTime;
     private float mInitialTimestamp = 0;    // 程序运行初始时间
-    float[] mOrientationAngles = new float[3];
     private float mAzimuth; // 相对世界坐标的航向角
-    private float[] mOri = new float[3];
+    private float azimuth;  // v[0]
+    private float pitch;    // v[1]
+    private float roll;     // v[2]
 
+    private double gyroDeltaT = 0;
+    private Double angFus = null;
+
+    // 初始航向
+    public static final int initAngCacheNum = 200;  // LinkedList保存200个最新航向，后100均值作为初始航向
+    private ArrayList<Float> initAngCache = new ArrayList<>(initAngCacheNum);
+    private boolean initAng = true;
+    private float azimuthInit;
 
     private static final float NS2S = 1.0f / 1000000000.0f; // 时间戳转秒
 
     // 控件
     private TextView mViewStepCount, mViewStepLength, mViewAzimuth, mViewDistance;
     private DrawingView mDrawingView;
-    private Button bt1;
+    private Button btLog;
 
     private int mStepCount = 0;
     private float mDistance;
@@ -62,11 +79,7 @@ public class MainActivity extends Activity implements SensorEventListener{
     private Pedometer mPedometer = new Pedometer();
 
 
-    private float[] values, r, gravity, geomagnetic;
-    private TextView tvAcc, tvAng0, tvAng1, tvAng2;
 
-    private double megTime;
-    private double OriTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,7 +94,7 @@ public class MainActivity extends Activity implements SensorEventListener{
         }
 
         // 创建文件夹
-        makeRootDirectory(PATH_PDR);
+        FileUtils.makeRootDirectory(PATH_PDR);
         // 写文件优化
 
         mViewStepCount = (TextView) findViewById(R.id.step_count_view);
@@ -91,64 +104,45 @@ public class MainActivity extends Activity implements SensorEventListener{
         mDrawingView = (DrawingView) findViewById(R.id.drawing_view);
 
 
-
-        tvAcc = (TextView) findViewById(R.id.accz);
-        tvAng0 = (TextView) findViewById(R.id.angle_0);
-        tvAng1 = (TextView) findViewById(R.id.angle_1);
-        tvAng2 = (TextView) findViewById(R.id.angle_2);
-
-        bt1 = (Button) findViewById(R.id.button1);
-        bt1.setOnClickListener(new OnClickListener() {
+        btLog = (Button) findViewById(R.id.button1);
+        btLog.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
                 writeSwitch = !writeSwitch;
                 Toast.makeText(MainActivity.this, ""+writeSwitch, Toast.LENGTH_SHORT).show();
                 // 每次打开记录建立新文件
                 if (writeSwitch) {
-                    dataLog = makeFile();
+                    FileUtils.closeRandomAccessFile(raf); // 关闭旧的访问句柄
+                    dataLog = FileUtils.makeFileNamedTime(PATH_PDR);
+                    raf = FileUtils.getRandomAccessFile(dataLog);
                 }
             }
         });
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 
-        Sensor mLinearAcceleration, mRotationVector, gyroscope, mRotation;
+        Sensor mLinearAcceleration, gyroscope, mRotation;
         // 线性加速度传感器，单位是m/s2，该传感器是获取加速度传感器去除重力的影响得到的数据
         mLinearAcceleration = mSensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
         // 旋转矢量传感器，旋转矢量代表设备的方向
-        mRotationVector = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-        // 方向传感器，过期。
+//        mRotationVector = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        // 方向传感器，磁力计获得
         mRotation = mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION);
         // 陀螺仪传感器，单位是rad/s，测量设备x、y、z三轴的角加速度
         gyroscope = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
 
-        //测试新的
-        Sensor magneticSensor,accelerometerSensor;
-        magneticSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
-        accelerometerSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
         // 监听传感器，级别为最高
         mSensorManager.registerListener(this, mLinearAcceleration, SensorManager.SENSOR_DELAY_GAME);
-        mSensorManager.registerListener(this, mRotationVector, SensorManager.SENSOR_DELAY_GAME);
         mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
-
-
         mSensorManager.registerListener(this, mRotation, SensorManager.SENSOR_DELAY_GAME);
 
-
-        mSensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_GAME);
-        mSensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
 
         // acc平均单元初始化，平均5个
         for (int i = 0; i < 3; i++){
             mAverageLinearAcceleration[i] = new MovingAverage(5);
         }
 
-        //初始化数组
-        values = new float[3];//用来保存最终的结果
-        gravity = new float[3];//用来保存加速度传感器的值
-        r = new float[9];//
-        geomagnetic = new float[3];//用来保存地磁传感器的值
 
     }
 
@@ -156,6 +150,7 @@ public class MainActivity extends Activity implements SensorEventListener{
     protected void onDestroy() {
         super.onDestroy();
         mSensorManager.unregisterListener(this);
+        FileUtils.closeRandomAccessFile(raf);
     }
 
     @Override
@@ -172,22 +167,34 @@ public class MainActivity extends Activity implements SensorEventListener{
                 mInitialTimestamp =event.timestamp;
             }
 
+            // 坐标转换，得到z轴新的acc 《坐标转换在移动用户行为识别中的应用》
+            double tmp = Math.pow(Math.sin(pitch), 2)+Math.pow(Math.sin(roll),2);
+            tmp = Math.pow(tmp, 0.5);
+            if(tmp > 1){
+                tmp = 1;
+            }
+            if(tmp < -1){
+                tmp = -1;
+            }
+
+            double x_angle = Math.asin(tmp);
+            double accZ = event.values[2]*Math.cos(x_angle)
+                    + event.values[0]*Math.sin(roll) - event.values[1]*Math.sin(pitch);
+
+
             for (int i = 0; i < 3; i++){
                 // 存进平均单元，检测步态用
-                mAverageLinearAcceleration[i].pushValue(event.values[i]);
+                mAverageLinearAcceleration[i].pushValue((float) accZ);
                 // 保存原始数据，打log用
                 originalAcc[i] = event.values[i];
             }
 
-            // 手机z，不是世界
-            float acc = mAverageLinearAcceleration[2].getAvg();
+
+            float acczAvg = mAverageLinearAcceleration[2].getAvg();
             float time = (event.timestamp - mInitialTimestamp) * NS2S;
 
 
-            String sign = acc >= 0 ? "+" :"-";
-            tvAcc.setText(String.format("accz:\n "+sign + "%.1f" , Math.abs(acc)));
-
-            mPedometer.getSample(acc, time);
+            mPedometer.getSample(acczAvg, time);
 
             if (mPedometer.IsStep()){
                 mStepCount++;
@@ -204,150 +211,72 @@ public class MainActivity extends Activity implements SensorEventListener{
             // 写log
             if(writeSwitch){
 
-                writeTxtToFile(originalAcc[0]+" "+originalAcc[1]+" "+originalAcc[2]+" "+time+" "
-
-                        +mOrientationAngles[0]+" "+mOrientationAngles[1]+" "+mOrientationAngles[2]+" "+
-                        +values[0]+" "+values[1]+" "+values[2]+" "+
-
-                        originalGyro[0]+" "+originalGyro[1]+" "+originalGyro[2]+" "+gyroTime
-
-                        +" "+mOri[0]+" "+mOri[1]+" "+mOri[2]
-                        +" "+OriTime + " " + megTime
-
+                FileUtils.writeTxtToFile(raf,
+                        originalAcc[0]+" "+originalAcc[1]+" "+originalAcc[2]+" "+time+" "
+                        +" "+azimuth+" "+pitch+" "+roll +" " + OriTime
+                        + originalGyro[0]+" "+originalGyro[1]+" "+originalGyro[2]+" "+gyroTime
+                                +" "+ angFus
                         +"\r\n", dataLog);
             }
 
-        }
-
-        else if(event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR){ // 旋转矢量
-            float[] mRotationMatrix = new float[9];
-            // 计算出旋转矩阵
-            SensorManager.getRotationMatrixFromVector(mRotationMatrix, event.values);
-            // 求得设备的方向（航向角、俯仰角、横滚角）
-            SensorManager.getOrientation(mRotationMatrix, mOrientationAngles);
-
-            mAzimuth = mOrientationAngles[0];   // 航向角作为方位
-            mViewAzimuth.setText(String.format("方位: %.0f度" ,mOrientationAngles[0]*180/Math.PI));
-
-            //
-//            tvAng0.setText(String.format("Ang0: \n%.1f" , mOrientationAngles[0]*180/Math.PI));
-//
-//            tvAng1.setText(String.format("Ang1: \n%.1f" , mOrientationAngles[1]*180/Math.PI));
-//            tvAng2.setText(String.format("Ang2: \n%.1f" , mOrientationAngles[2]*180/Math.PI));
-
-
-        }
-
-
-        else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE){ // 陀螺仪
+        } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE){ // 陀螺仪
             // 从 x、y、z 轴的正向位置观看处于原始方位的设备，如果设备逆时针旋转，将会收到正值；否则，为负值
             originalGyro[0] = event.values[0];
             originalGyro[1] = event.values[1];
             originalGyro[2] = event.values[2];
+
+            if(gyroTime != 0){
+                gyroDeltaT = event.timestamp* NS2S - gyroTime;
+            }
+
             gyroTime = event.timestamp * NS2S;
 
-        }
+            // 获得了初始航向了
+            if (!initAng) {
+                if (angFus == null) {
+                    angFus = (double)azimuthInit;
+                } else {
+                    angFus = angFus - originalGyro[2] * gyroDeltaT;
+                    if(angFus < 0){
+                        angFus += 2 * Math.PI;
+                    } else if (angFus >= 2 * Math.PI) {
+                        angFus -= (2 * Math.PI);
+                    }
+                }
 
-        if (event.sensor.getType() == Sensor.TYPE_ORIENTATION){
-            mOri = event.values;
-//            tvAng0.setText(String.format("Ang0: \n%.1f" , mOri[0]));
-//            tvAng1.setText(String.format("Ang1: \n%.1f" , mOri[1]));
-//            tvAng2.setText(String.format("Ang2: \n%.1f" , mOri[2]));
+                mViewAzimuth.setText(String.format("方位: %.0f度", Math.toDegrees(angFus)));
+            }
+
+        } else if (event.sensor.getType() == Sensor.TYPE_ORIENTATION){
+            azimuth = event.values[0];
+            pitch = event.values[1];
+            roll = event.values[2];
 
             OriTime = event.timestamp * NS2S;
 
-            mOri[0] = (float) Math.toRadians(mOri[0]);
-            mOri[1] = (float) Math.toRadians(mOri[1]);
-            mOri[2] = (float) Math.toRadians(mOri[2]);
+//            mViewAzimuth.setText(String.format("方位: %.0f度", azimuth));
 
+            azimuth = (float) Math.toRadians(azimuth);
+            pitch = (float) Math.toRadians(pitch);
+            roll = (float) Math.toRadians(roll);
 
-        }
+            mAzimuth = azimuth;   // 航向角作为方位
 
-
-        if (event.sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
-            geomagnetic = event.values.clone();
-        }
-
-
-        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-            gravity = event.values.clone();
-            megTime = event.timestamp * NS2S;
-            getValue();
-        }
-    }
-
-    public void getValue() {
-        // r从这里返回
-        SensorManager.getRotationMatrix(r, null, gravity, geomagnetic);
-        //values从这里返回
-        SensorManager.getOrientation(r, values);
-
-        tvAng0.setText(String.format("Ang0: \n%.1f" , values[0]*180/Math.PI));
-        tvAng1.setText(String.format("Ang1: \n%.1f" , values[1]*180/Math.PI));
-        tvAng2.setText(String.format("Ang2: \n%.1f" , values[2]*180/Math.PI));
-
-
-
-//        //提取数据
-//        double azimuth = Math.toDegrees(values[0]);
-//        if (azimuth < 0) {
-//            azimuth=azimuth+360;
-//        }
-//        double pitch = Math.toDegrees(values[1]);
-//        double roll = Math.toDegrees(values[2]);
-//
-//        tv.invalidate();
-//        tv.setText("Azimuth：" + (int)azimuth + "\nPitch：" + (int)pitch + "\nRoll：" + (int)roll);
-    }
-
-
-    // 将字符串写入到文本文件中
-    public void writeTxtToFile(String str, File file) {
-        RandomAccessFile raf = null;
-        try {
-            raf = new RandomAccessFile(file, "rwd");
-            raf.seek(file.length());
-            raf.write(str.getBytes());
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            if (raf != null) {
-                try {
-                    raf.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+            // 需要计算初始航向
+            if (initAng) {
+                initAngCache.add(azimuth);
+                if (initAngCache.size() >= initAngCacheNum) {
+                    initAng = false;
+                    int f = 0;
+                    // 刚开始有误差，只用后面的
+                    for (int i = initAngCacheNum / 2; i < initAngCacheNum; i++) {
+                        azimuthInit += initAngCache.get(i);
+                        f++;
+                    }
+                    azimuthInit /= f;
                 }
             }
 
         }
-    }
-
-    // 生成文件
-    public File makeFile() {
-        File file = null;
-        try {
-            String time = new SimpleDateFormat("yyyyMMdd_hhmmss")
-                    .format(new Date(System.currentTimeMillis()));
-            file = new File(PATH_PDR + "data" + time + ".txt");
-            if (!file.exists()) {
-                file.createNewFile();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return file;
-    }
-
-    // 生成文件夹
-    public void makeRootDirectory(String filePath) {
-        try {
-            File file = new File(filePath);
-            if (!file.exists()) {
-                file.mkdir();
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
     }
 }
