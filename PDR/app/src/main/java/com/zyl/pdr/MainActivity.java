@@ -112,13 +112,13 @@ public class MainActivity extends Activity implements SensorEventListener{
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 
-        Sensor mLinearAcceleration, mRotationVector, gyroscope;
+        Sensor mLinearAcceleration, mRotationVector, gyroscope, mRotation;
         // 线性加速度传感器，单位是m/s2，该传感器是获取加速度传感器去除重力的影响得到的数据
         mLinearAcceleration = mSensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
         // 旋转矢量传感器，旋转矢量代表设备的方向
         mRotationVector = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         // 方向传感器，过期。
-        mRotationVector = mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION);
+        mRotation = mSensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION);
         // 陀螺仪传感器，单位是rad/s，测量设备x、y、z三轴的角加速度
         gyroscope = mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
 
@@ -131,6 +131,10 @@ public class MainActivity extends Activity implements SensorEventListener{
         mSensorManager.registerListener(this, mLinearAcceleration, SensorManager.SENSOR_DELAY_GAME);
         mSensorManager.registerListener(this, mRotationVector, SensorManager.SENSOR_DELAY_GAME);
         mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+
+
+        mSensorManager.registerListener(this, mRotation, SensorManager.SENSOR_DELAY_GAME);
+
 
         mSensorManager.registerListener(this, magneticSensor, SensorManager.SENSOR_DELAY_GAME);
         mSensorManager.registerListener(this, accelerometerSensor, SensorManager.SENSOR_DELAY_GAME);
@@ -202,7 +206,7 @@ public class MainActivity extends Activity implements SensorEventListener{
 
                 writeTxtToFile(originalAcc[0]+" "+originalAcc[1]+" "+originalAcc[2]+" "+time+" "
 
-//                        +mOrientationAngles[0]+" "+mOrientationAngles[1]+" "+mOrientationAngles[2]+" "+
+                        +mOrientationAngles[0]+" "+mOrientationAngles[1]+" "+mOrientationAngles[2]+" "+
                         +values[0]+" "+values[1]+" "+values[2]+" "+
 
                         originalGyro[0]+" "+originalGyro[1]+" "+originalGyro[2]+" "+gyroTime
@@ -215,24 +219,24 @@ public class MainActivity extends Activity implements SensorEventListener{
 
         }
 
-//        else if(event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR){ // 旋转矢量
-//            float[] mRotationMatrix = new float[9];
-//            // 计算出旋转矩阵
-//            SensorManager.getRotationMatrixFromVector(mRotationMatrix, event.values);
-//            // 求得设备的方向（航向角、俯仰角、横滚角）
-//            SensorManager.getOrientation(mRotationMatrix, mOrientationAngles);
+        else if(event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR){ // 旋转矢量
+            float[] mRotationMatrix = new float[9];
+            // 计算出旋转矩阵
+            SensorManager.getRotationMatrixFromVector(mRotationMatrix, event.values);
+            // 求得设备的方向（航向角、俯仰角、横滚角）
+            SensorManager.getOrientation(mRotationMatrix, mOrientationAngles);
+
+            mAzimuth = mOrientationAngles[0];   // 航向角作为方位
+            mViewAzimuth.setText(String.format("方位: %.0f度" ,mOrientationAngles[0]*180/Math.PI));
+
+            //
+//            tvAng0.setText(String.format("Ang0: \n%.1f" , mOrientationAngles[0]*180/Math.PI));
 //
-//            mAzimuth = mOrientationAngles[0];   // 航向角作为方位
-//            mViewAzimuth.setText(String.format("方位: %.0f度" ,mOrientationAngles[0]*180/Math.PI));
-//
-//            //
-////            tvAng0.setText(String.format("Ang0: \n%.1f" , mOrientationAngles[0]*180/Math.PI));
-////
-////            tvAng1.setText(String.format("Ang1: \n%.1f" , mOrientationAngles[1]*180/Math.PI));
-////            tvAng2.setText(String.format("Ang2: \n%.1f" , mOrientationAngles[2]*180/Math.PI));
-//
-//
-//        }
+//            tvAng1.setText(String.format("Ang1: \n%.1f" , mOrientationAngles[1]*180/Math.PI));
+//            tvAng2.setText(String.format("Ang2: \n%.1f" , mOrientationAngles[2]*180/Math.PI));
+
+
+        }
 
 
         else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE){ // 陀螺仪
