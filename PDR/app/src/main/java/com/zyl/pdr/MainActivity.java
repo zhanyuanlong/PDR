@@ -9,6 +9,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Environment;
 import android.os.Bundle;
+import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -18,6 +19,7 @@ import android.widget.Toast;
 import android.Manifest;
 
 
+import com.zyl.pdr.utils.CalculationUtils;
 import com.zyl.pdr.utils.FileUtils;
 
 import java.io.File;
@@ -46,12 +48,11 @@ public class MainActivity extends Activity implements SensorEventListener{
 
     // 数据用
     private float[] originalAcc = new float[3]; // 储存原始传感器acc
-    private MovingAverage[] mAverageLinearAcceleration = new MovingAverage[3]; // 平均单元
     private float[] originalGyro = new float[3];    // 储存陀螺仪原始数据
     private double gyroTime;
     private double OriTime;
     private float mInitialTimestamp = 0;    // 程序运行初始时间
-    private float mAzimuth; // 相对世界坐标的航向角
+    private float mAzimuth; // 相对世界坐标的航向角,弧度单位
     private float azimuth;  // v[0]
     private float pitch;    // v[1]
     private float roll;     // v[2]
@@ -77,8 +78,6 @@ public class MainActivity extends Activity implements SensorEventListener{
 
     private SensorManager mSensorManager;   // 传感器相关
     private Pedometer mPedometer = new Pedometer();
-
-
 
 
     @Override
@@ -138,12 +137,6 @@ public class MainActivity extends Activity implements SensorEventListener{
         mSensorManager.registerListener(this, mRotation, SensorManager.SENSOR_DELAY_GAME);
 
 
-        // acc平均单元初始化，平均5个
-        for (int i = 0; i < 3; i++){
-            mAverageLinearAcceleration[i] = new MovingAverage(5);
-        }
-
-
     }
 
     @Override
@@ -164,58 +157,35 @@ public class MainActivity extends Activity implements SensorEventListener{
         // 加速度传感器
         if(event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
             if (mInitialTimestamp == 0){
-                mInitialTimestamp =event.timestamp;
+                mInitialTimestamp = event.timestamp;
             }
-
-            // 坐标转换，得到z轴新的acc 《坐标转换在移动用户行为识别中的应用》
-            double tmp = Math.pow(Math.sin(pitch), 2)+Math.pow(Math.sin(roll),2);
-            tmp = Math.pow(tmp, 0.5);
-            if(tmp > 1){
-                tmp = 1;
-            }
-            if(tmp < -1){
-                tmp = -1;
-            }
-
-            double x_angle = Math.asin(tmp);
-            double accZ = event.values[2]*Math.cos(x_angle)
-                    + event.values[0]*Math.sin(roll) - event.values[1]*Math.sin(pitch);
-
-
-            for (int i = 0; i < 3; i++){
-                // 存进平均单元，检测步态用
-                mAverageLinearAcceleration[i].pushValue((float) accZ);
-                // 保存原始数据，打log用
-                originalAcc[i] = event.values[i];
-            }
-
-
-            float acczAvg = mAverageLinearAcceleration[2].getAvg();
             float time = (event.timestamp - mInitialTimestamp) * NS2S;
 
+            originalAcc = event.values;
 
-            mPedometer.getSample(acczAvg, time);
+            // 坐标转换
+            double accZ = CalculationUtils.coordinateTransAcc2Z(event.values, pitch, roll);
+            mPedometer.addSample(accZ, time);
 
             if (mPedometer.IsStep()){
                 mStepCount++;
                 float mStrideLength =  mPedometer.getStrideLength();
-                mPedometer.clear();
                 mDistance += mStrideLength;
                 mDrawingView.pushValue(mStrideLength, mAzimuth);
                 mDrawingView.invalidate();
                 mViewStepCount.setText(String.format("步数: %d", mStepCount));
                 mViewStepLength.setText( String.format("步长: %.2f m" , mStrideLength));
-                mViewDistance.setText(String.format("距离: %.1f m", mDistance));
+                mViewDistance.setText(String.format("路程: %.2f m", mDistance));
             }
 
             // 写log
             if(writeSwitch){
 
                 FileUtils.writeTxtToFile(raf,
-                        originalAcc[0]+" "+originalAcc[1]+" "+originalAcc[2]+" "+time+" "
+                        originalAcc[0]+" "+originalAcc[1]+" "+originalAcc[2]+" "+time
                         +" "+azimuth+" "+pitch+" "+roll +" " + OriTime
-                        + originalGyro[0]+" "+originalGyro[1]+" "+originalGyro[2]+" "+gyroTime
-                                +" "+ angFus
+                        +" " + originalGyro[0]+" "+originalGyro[1]+" "+originalGyro[2]+" "+gyroTime
+                                +" "+ (angFus == null ? 0 : angFus)
                         +"\r\n", dataLog);
             }
 
@@ -243,7 +213,8 @@ public class MainActivity extends Activity implements SensorEventListener{
                         angFus -= (2 * Math.PI);
                     }
                 }
-
+                double tmp = angFus;
+                mAzimuth = (float) tmp;   // 航向角作为方位
                 mViewAzimuth.setText(String.format("方位: %.0f度", Math.toDegrees(angFus)));
             }
 
@@ -260,7 +231,7 @@ public class MainActivity extends Activity implements SensorEventListener{
             pitch = (float) Math.toRadians(pitch);
             roll = (float) Math.toRadians(roll);
 
-            mAzimuth = azimuth;   // 航向角作为方位
+//            mAzimuth = azimuth;   // 航向角作为方位
 
             // 需要计算初始航向
             if (initAng) {
@@ -274,6 +245,7 @@ public class MainActivity extends Activity implements SensorEventListener{
                         f++;
                     }
                     azimuthInit /= f;
+                    initAngCache = null;
                 }
             }
 

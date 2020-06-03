@@ -27,8 +27,9 @@ public class DrawingView extends View {
         super(context, attrs);
         mPaintLine = new Paint();
         mPaintLine.setColor(Color.RED);
-        mPaintLine.setStyle(Paint.Style.STROKE);
-        mPaintLine.setStrokeWidth(10);
+        mPaintLine.setStyle(Paint.Style.STROKE);//线条
+        mPaintLine.setStrokeWidth(10); //宽度
+
         mPaintPoint = new Paint();
         mPaintPoint.setColor(Color.RED);
         mPathLine = new Path();
@@ -36,6 +37,9 @@ public class DrawingView extends View {
         mPathPoint.addCircle(0, 0, 10, Path.Direction.CCW);
         mPosX = 0;
         mPosY = 0;
+
+//        this.setImageResource(R.drawable.map);
+        //放大手势
         mDetector = new ScaleGestureDetector(context, new ScaleListener());
     }
 

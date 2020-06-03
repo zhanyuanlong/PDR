@@ -1,94 +1,121 @@
 package com.zyl.pdr;
 
-import java.util.ArrayList;
+import java.util.LinkedList;
 
 public class Pedometer {
+    private LinkedList<Float> accData;   // zacc原始数据窗口
+    private LinkedList<Float> avgAccData;   // zacc平均后的数据窗口
+    private LinkedList<Float> accTime;  // zacc数据对应的时间
+
+    // 参数相关
+    private final float LOW_Threshold = 1.2f;
+    private final float HIGH_Threshold = 6.5f;
+    private final float TIME_INTER_Threshold = 0.4f;
+    // 传感器大概50Hz，就用1s的数据
+    private final int WINDOW_SIZE = 41;
+    private final float FUDGE_FACTOR = 1.65f;
+
+    // 平滑相关
+    private MovingAverage movingAverage; // 平均单元
+    private static final int SMOOTH_NUM = 5;
+
+    private double lastStepTime = 0;
     private Float strideLength;
-    private ArrayList<Float> accData;
-    private float max, min, sum, avg, a1, a2, t1, t2;
-    private float[] accWindow;
-    private int index, totalCount;
-    private float top, down;    // 窗口内最大最小值
-    private final float walkFudge = 1.821f;
-    private final int LEN = 50;
+    private boolean isStep = false;
 
     public Pedometer() {
-        accData = new ArrayList<Float>(LEN);
-        max = -10000f;  //总体最大值
-        min = 10000f;
-        sum = 0f;       // 单元平均用的和
-        avg = 0f;
-        a1 = 0f;
-        a2 = 0f;
-        t1 = 0f;
-        t2 = 0f;
-        accWindow = new float[LEN];
-        index = 0;
-        totalCount = 0;
-        strideLength = 0f;
+        accData = new LinkedList<>();
+        avgAccData = new LinkedList<>();
+        accTime = new LinkedList<>();
+        // acc平均单元初始化
+        movingAverage = new MovingAverage(SMOOTH_NUM);
     }
 
     /*
-    * 刚刚走的一步的长度估计
+    * 获取上一次的步长，建议行走状态后立刻获取
     * **/
-    public float getStrideLength() {
-        avg = sum / accData.size();
-
-        strideLength = walkFudge * (avg - min) / (max - min);
-
-        if (strideLength.isInfinite() || strideLength.isNaN()) {
-            strideLength = 0.6f;
-        }
-
+    public float getStrideLength() {    //获取步长
         return strideLength;
     }
 
     /*
-    * 是否发生了一步行走
+    * 刚刚走的一步的长度估计,
+    * 认为这一步的数据在accData中
     * **/
-    public boolean IsStep() {
-        float thresh = (top + down)/2 + 1.5f; // 动态门限计算
-        if (a2 > thresh && a1 < thresh && (t2 - t1) > 0.5) {
-            t1 = t2;
-            return true;
+    public void calStrideLength() {
+        float avg = 0;
+        int N = accData.size();
+        float max = -100, min = 100;
+        for (Float data : accData) {
+            avg += data;
+            if (max < data) {
+                max = data;
+            }
+            if (min > data) {
+                min = data;
+            }
+        }
+        avg /= N;
+        Float strideLength = FUDGE_FACTOR * (avg - min) / (max - min);
+        if (strideLength.isInfinite() || strideLength.isNaN()) {
+            strideLength = 0.6f;	//默认60cm
         }
 
-        return false;
+        this.strideLength = strideLength;
+    }
+
+
+    /*
+    * 是否发生了一步行走
+    * 读取到了true先清除
+    * **/
+    public boolean IsStep() {
+        if (isStep) {
+            isStep = false;
+            return true;
+        } else {
+            return isStep;
+        }
     }
 
     /*
-    *
+    * 添加新的acc数据,并计算是否行走了
     * acc是移动平均后的z轴加速度，time是acc采集的时间戳
     *
     * **/
-    public void getSample(float acc, float time) {
-        accData.add(acc);
-        t2 = time;
-        max = Math.max(max, acc);
-        min = Math.min(min, acc);
-        sum += acc;
-        accWindow[index] = acc;
-        index = (index + 1)%LEN;
-        totalCount++;
-        //求窗口内极值
-        if (totalCount >= LEN) {
-            top = accWindow[0];
-            down = accWindow[0];
-            for (int i = 0; i < LEN; i++) {
-                top = Math.max(top, accWindow[i]);
-                down = Math.min(down, accWindow[i]);
+    public void addSample(double acc, float time) {
+        movingAverage.pushValue((float) acc);
+        float accAvg = movingAverage.getAvg();
+
+        accData.addLast((float) acc);
+        avgAccData.addLast(accAvg);
+        accTime.addLast(time);
+
+        if (avgAccData.size() > WINDOW_SIZE) {
+            accData.removeFirst();
+            avgAccData.removeFirst();
+            accTime.removeFirst();
+
+            //检测avgAccData[WINDOW_SIZE/2]是否为窗口最大值
+            boolean flag = false;
+            float anchor = avgAccData.get(WINDOW_SIZE/2);
+            for (float data : avgAccData) {
+                if (anchor < data) {
+                    flag = true;
+                    break;
+                }
+            }
+
+            // 是窗口最大值
+            if (!flag) {
+                double tmpTime = accTime.get(WINDOW_SIZE/2);
+                if (anchor > LOW_Threshold && anchor < HIGH_Threshold
+                        && tmpTime > lastStepTime + TIME_INTER_Threshold) {
+                    lastStepTime = tmpTime;
+                    calStrideLength();
+                    isStep = true;
+                }
             }
         }
-        a1 = a2;
-        a2 = acc;
-    }
-
-    public void clear() {
-        accData.clear();
-        max = -10000f;
-        min = 10000f;
-        sum = 0f;
-        avg = 0f;
-        strideLength = 0f;
     }
 }
