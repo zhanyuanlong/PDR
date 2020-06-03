@@ -85,6 +85,9 @@ public class MainActivity extends Activity implements SensorEventListener{
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        Log.i("PDR", "onCreate进入");
+
+
         // android高版本需要动态引入权限
         int hasWriteContactsPermission = checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE);
         if (hasWriteContactsPermission != PackageManager.PERMISSION_GRANTED) {
@@ -101,6 +104,7 @@ public class MainActivity extends Activity implements SensorEventListener{
         mViewAzimuth = (TextView) findViewById(R.id.azimuth_view);
         mViewDistance = (TextView) findViewById(R.id.distance_view);
         mDrawingView = (DrawingView) findViewById(R.id.drawing_view);
+
 
 
         btLog = (Button) findViewById(R.id.button1);
@@ -171,8 +175,11 @@ public class MainActivity extends Activity implements SensorEventListener{
                 mStepCount++;
                 float mStrideLength =  mPedometer.getStrideLength();
                 mDistance += mStrideLength;
+
                 mDrawingView.pushValue(mStrideLength, mAzimuth);
                 mDrawingView.invalidate();
+
+
                 mViewStepCount.setText(String.format("步数: %d", mStepCount));
                 mViewStepLength.setText( String.format("步长: %.2f m" , mStrideLength));
                 mViewDistance.setText(String.format("路程: %.2f m", mDistance));
