@@ -13,11 +13,11 @@ public class Pedometer {
     private final float TIME_INTER_Threshold = 0.4f;
     // 传感器大概50Hz，就用1s的数据
     private final int WINDOW_SIZE = 41;
-    private final float FUDGE_FACTOR = 1.65f;
+    private final float FUDGE_FACTOR_K = 0.41f;
 
     // 平滑相关
     private MovingAverage movingAverage; // 平均单元
-    private static final int SMOOTH_NUM = 5;
+    private static final int SMOOTH_NUM = 3;
 
     private double lastStepTime = 0;
     private Float strideLength;
@@ -43,11 +43,9 @@ public class Pedometer {
     * 认为这一步的数据在accData中
     * **/
     public void calStrideLength() {
-        float avg = 0;
         int N = accData.size();
         float max = -100, min = 100;
         for (Float data : accData) {
-            avg += data;
             if (max < data) {
                 max = data;
             }
@@ -55,8 +53,8 @@ public class Pedometer {
                 min = data;
             }
         }
-        avg /= N;
-        Float strideLength = FUDGE_FACTOR * (avg - min) / (max - min);
+
+        Float strideLength = FUDGE_FACTOR_K * (float)Math.pow (max - min, 0.25);
         if (strideLength.isInfinite() || strideLength.isNaN()) {
             strideLength = 0.6f;	//默认60cm
         }
