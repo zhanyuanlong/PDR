@@ -58,6 +58,20 @@ public class FileUtils {
         return file;
     }
 
+    // 生成文件
+    public static File makeFile(String path, String name) {
+        File file = null;
+        try {
+            file = new File(path + name);
+            if (!file.exists()) {
+                file.createNewFile();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return file;
+    }
+
     // 生成文件夹
     public static void makeRootDirectory(String filePath) {
         try {
