@@ -1,5 +1,6 @@
 package com.zyl.pdr;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -7,30 +8,22 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.os.Environment;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.Manifest;
-
 
 import com.zyl.pdr.utils.CalculationUtils;
 import com.zyl.pdr.utils.FileUtils;
+import com.zyl.pdr.utils.RecordUtils;
 
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.io.Writer;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Date;
-import java.util.LinkedList;
 
 
 public class MainActivity extends Activity implements SensorEventListener{
@@ -49,15 +42,16 @@ public class MainActivity extends Activity implements SensorEventListener{
     // 数据用
     private float[] originalAcc = new float[3]; // 储存原始传感器acc
     private float[] originalGyro = new float[3];    // 储存陀螺仪原始数据
-    private double gyroTime;
-    private double OriTime;
-    private float mInitialTimestamp = 0;    // 程序运行初始时间
+    private long gyroTime;
+    private long OriTime;
+//    private float mInitialTimestamp = 0;    // 程序运行初始时间
+
     private float mAzimuth; // 相对世界坐标的航向角,弧度单位
     private float azimuth;  // v[0]
     private float pitch;    // v[1]
     private float roll;     // v[2]
 
-    private double gyroDeltaT = 0;
+    private long gyroDeltaT = 0;
     private Double angFus = null;
 
     // 初始航向
@@ -71,13 +65,17 @@ public class MainActivity extends Activity implements SensorEventListener{
     // 控件
     private TextView mViewStepCount, mViewStepLength, mViewAzimuth, mViewDistance;
     private DrawingView mDrawingView;
-    private Button btLog;
+    private Button btLog, btRecord;
 
     private int mStepCount = 0;
     private float mDistance;
 
     private SensorManager mSensorManager;   // 传感器相关
     private Pedometer mPedometer = new Pedometer();
+
+    // 录音相关
+    private boolean startRecord = false;
+    private RecordUtils recordUtils;
 
 
     @Override
@@ -95,19 +93,26 @@ public class MainActivity extends Activity implements SensorEventListener{
                     CODE_FOR_WRITE_PERMISSION);
         }
 
+        int hasRecordPermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO);
+        if (hasRecordPermission != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.RECORD_AUDIO},
+                    CODE_FOR_WRITE_PERMISSION);
+        }
+
+
         // 创建文件夹
         FileUtils.makeRootDirectory(PATH_PDR);
         // 写文件优化
 
-        mViewStepCount = (TextView) findViewById(R.id.step_count_view);
-        mViewStepLength = (TextView) findViewById(R.id.step_length_view);
-        mViewAzimuth = (TextView) findViewById(R.id.azimuth_view);
-        mViewDistance = (TextView) findViewById(R.id.distance_view);
-        mDrawingView = (DrawingView) findViewById(R.id.drawing_view);
+        mViewStepCount = findViewById(R.id.step_count_view);
+        mViewStepLength = findViewById(R.id.step_length_view);
+        mViewAzimuth = findViewById(R.id.azimuth_view);
+        mViewDistance = findViewById(R.id.distance_view);
+        mDrawingView = findViewById(R.id.drawing_view);
 
 
 
-        btLog = (Button) findViewById(R.id.button1);
+        btLog = findViewById(R.id.buttonLog);
         btLog.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -119,6 +124,25 @@ public class MainActivity extends Activity implements SensorEventListener{
                     dataLog = FileUtils.makeFileNamedTime(PATH_PDR);
                     raf = FileUtils.getRandomAccessFile(dataLog);
                 }
+            }
+        });
+
+
+        btRecord = findViewById(R.id.buttonRecord);
+        btRecord.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!startRecord) {
+                    btRecord.setBackgroundResource(R.drawable.doing);
+                    Toast.makeText(MainActivity.this, "开始录音", Toast.LENGTH_SHORT).show();
+                    recordUtils.startRecord();
+
+                } else {
+                    btRecord.setBackgroundResource(R.drawable.start);
+                    Toast.makeText(MainActivity.this, "录音结束", Toast.LENGTH_SHORT).show();
+                    recordUtils.stopRecord();
+                }
+                startRecord = !startRecord;
             }
         });
 
@@ -140,6 +164,7 @@ public class MainActivity extends Activity implements SensorEventListener{
         mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
         mSensorManager.registerListener(this, mRotation, SensorManager.SENSOR_DELAY_GAME);
 
+        recordUtils = RecordUtils.getInstance();
 
     }
 
@@ -160,10 +185,17 @@ public class MainActivity extends Activity implements SensorEventListener{
     public void onSensorChanged(SensorEvent event) {
         // 加速度传感器
         if(event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
-            if (mInitialTimestamp == 0){
-                mInitialTimestamp = event.timestamp;
-            }
-            float time = (event.timestamp - mInitialTimestamp) * NS2S;
+
+//            if (initTimePhone == 0){
+//                // 不能保证这个时间就是传感器时间
+//                initTimePhone = SystemClock.elapsedRealtimeNanos();
+//                initTimeSensor = event.timestamp;
+//            }
+
+//            float time = (event.timestamp - mInitialTimestamp) * NS2S;
+
+            // 为了和录音同步，用绝对时间
+            long time = event.timestamp; // 纳秒
 
             originalAcc = event.values;
 
@@ -203,17 +235,17 @@ public class MainActivity extends Activity implements SensorEventListener{
             originalGyro[2] = event.values[2];
 
             if(gyroTime != 0){
-                gyroDeltaT = event.timestamp* NS2S - gyroTime;
+                gyroDeltaT = event.timestamp - gyroTime;
             }
 
-            gyroTime = event.timestamp * NS2S;
+            gyroTime = event.timestamp;
 
             // 获得了初始航向了
             if (!initAng) {
                 if (angFus == null) {
                     angFus = (double)azimuthInit;
                 } else {
-                    angFus = angFus - originalGyro[2] * gyroDeltaT;
+                    angFus = angFus - originalGyro[2] * (gyroDeltaT*NS2S);
                     if(angFus < 0){
                         angFus += 2 * Math.PI;
                     } else if (angFus >= 2 * Math.PI) {
@@ -230,7 +262,7 @@ public class MainActivity extends Activity implements SensorEventListener{
             pitch = event.values[1];
             roll = event.values[2];
 
-            OriTime = event.timestamp * NS2S;
+            OriTime = event.timestamp;
 
 //            mViewAzimuth.setText(String.format("方位: %.0f度", azimuth));
 
