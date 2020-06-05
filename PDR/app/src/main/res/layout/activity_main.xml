@@ -76,22 +76,35 @@
     </LinearLayout>
 
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        >
 
+        <Button
+            android:id="@+id/buttonLog"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginLeft="5dp"
+            android:layout_marginTop="5dp"
+            android:background="@drawable/disk"
+            android:text="" />
+        <LinearLayout
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:gravity="right" >
 
-    <Button
-        android:id="@+id/button1"
-        android:layout_width="32dp"
-        android:layout_height="32dp"
-        android:text=""
-        android:background="@drawable/disk"
-        android:layout_marginLeft="5dp"
-        android:layout_marginTop="5dp"
-        />
-
-
-
-
-
+            <Button
+                android:id="@+id/buttonRecord"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="@drawable/start"
+                android:layout_marginRight="5dp"
+                android:layout_marginTop="5dp"
+                android:text="" />
+        </LinearLayout>
+    </LinearLayout>
 
 
     <com.zyl.pdr.DrawingView
