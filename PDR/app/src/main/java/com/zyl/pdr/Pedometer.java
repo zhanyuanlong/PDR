@@ -5,12 +5,15 @@ import java.util.LinkedList;
 public class Pedometer {
     private LinkedList<Float> accData;   // zacc原始数据窗口
     private LinkedList<Float> avgAccData;   // zacc平均后的数据窗口
-    private LinkedList<Float> accTime;  // zacc数据对应的时间
+    private LinkedList<Long> accTime;  // zacc数据对应的时间
 
+    private static final float NS2S = 1.0f / 1000000000.0f; // 时间戳转秒
     // 参数相关
     private final float LOW_Threshold = 1.2f;
     private final float HIGH_Threshold = 6.5f;
-    private final float TIME_INTER_Threshold = 0.4f;
+
+    private long TIME_INTER_Threshold = (long) (0.4 * 1000000000);
+
     // 传感器大概50Hz，就用1s的数据
     private final int WINDOW_SIZE = 41;
     private final float FUDGE_FACTOR_K = 0.41f;
@@ -19,7 +22,7 @@ public class Pedometer {
     private MovingAverage movingAverage; // 平均单元
     private static final int SMOOTH_NUM = 3;
 
-    private double lastStepTime = 0;
+    private long lastStepTime = 0;
     private Float strideLength;
     private boolean isStep = false;
 
@@ -81,7 +84,7 @@ public class Pedometer {
     * acc是移动平均后的z轴加速度，time是acc采集的时间戳
     *
     * **/
-    public void addSample(double acc, float time) {
+    public void addSample(double acc, long time) {
         movingAverage.pushValue((float) acc);
         float accAvg = movingAverage.getAvg();
 
@@ -106,7 +109,7 @@ public class Pedometer {
 
             // 是窗口最大值
             if (!flag) {
-                double tmpTime = accTime.get(WINDOW_SIZE/2);
+                long tmpTime = accTime.get(WINDOW_SIZE/2);
                 if (anchor > LOW_Threshold && anchor < HIGH_Threshold
                         && tmpTime > lastStepTime + TIME_INTER_Threshold) {
                     lastStepTime = tmpTime;
